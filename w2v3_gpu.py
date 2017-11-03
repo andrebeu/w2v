@@ -78,17 +78,15 @@ def get_loss_op(target_id, context_id):
   return loss
 
 
-def get_dsitr(corpus_fpath):
+def get_dsitr(tph,cph):
 
-  data_dict, i2w_dict = get_data(corpus_fpath,vocab_size,num_cwords)
-  tfds = tf.contrib.data.Dataset.from_tensor_slices(
-    (data_dict['target'], data_dict['context']))
+  tfds = tf.contrib.data.Dataset.from_tensor_slices((tph, cph))
   tfds = tfds.repeat(num_epochs)
   tfds = tfds.shuffle(100000)
   tfds = tfds.batch(batch_size)
-  dsitr = tfds.make_one_shot_iterator()
+  dsitr = tfds.make_initializable_iterator()
   
-  return dsitr, i2w_dict
+  return dsitr
 
 
 
@@ -99,13 +97,24 @@ def train_w2v(corpus_fpath):
   w2vgraph = tf.Graph()
 
   ## train ##
-  pconfig = tf.ConfigProto(log_device_placement=True,
+  pconfig = tf.ConfigProto(log_device_placement=False,
                           allow_soft_placement=True)
   with tf.Session(graph=w2vgraph,config=pconfig) as sess:
     
     # dataset iterator
     with tf.device('/cpu:0'):
-      dsitr, i2w_dict = get_dsitr(corpus_fpath)
+      data_dict, i2w_dict = get_data(
+        corpus_fpath, vocab_size, num_cwords)
+      tph = tf.placeholder(tf.int64,
+          shape=[len(data_dict['target'])],
+          name='target_placeholder')
+      cph = tf.placeholder(tf.int64,
+          shape=[len(data_dict['context'])],
+          name='context_placeholder')
+      feed_dict = {tph:data_dict['target'],
+                    cph:data_dict['context']}
+      dsitr = get_dsitr(tph,cph)
+      sess.run(dsitr.initializer,feed_dict)
       
     # assembling towers
     applygrads_list = []
@@ -132,6 +141,7 @@ def train_w2v(corpus_fpath):
     while True:
       try:
         opt_return, batch_loss = sess.run([applygrads_group, loss_op])
+        print(batch_loss)
       except tf.errors.OutOfRangeError:
         print('ended iter')
         break
@@ -159,8 +169,10 @@ def make_embed_dictionary(i2w_dict,embedding_matrix):
 
 if __name__ == "__main__":
 
-  corpus_fpath = sys.argv[1]
-  results_dir = sys.argv[2]
+  # corpus_fpath = sys.argv[1]
+  # results_dir = sys.argv[2]
+  corpus_fpath = "/Users/abeukers/wd/w2v/data/corpus_partitions/4_k10/FOX-1of10.txt"
+  results_dir = "/Users/abeukers/wd/w2v/results/troubleshoot"
 
   param_str = "%ivocab_%iembed_%icwords_%ineg_%ibatch_%iepo_%igpu" % params
   with open(results_dir+"/0params.txt", 'w') as file:
